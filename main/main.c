@@ -28,6 +28,7 @@ void run_ota(void *params)
 {
   while (true)
   {
+    
     xSemaphoreTake(ota_semaphore, portMAX_DELAY);
     ESP_LOGI(TAG, "Invoking OTA");
 
@@ -45,7 +46,7 @@ void run_ota(void *params)
     if(esp_https_ota(&clientConfig) == ESP_OK)
     {
       // ESP_LOGI(TAG,"OTA flash succsessfull for version %d.",software_version);
-      printf("restarting in 5 seconds\n");
+      printf("restarting in 5  seconds\n");
       vTaskDelay(pdMS_TO_TICKS(5000));
       esp_restart();
     }
