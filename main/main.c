@@ -19,8 +19,8 @@
 #include "connect.h"
 #include "mqtt_client.h"
 #include "driver/gpio.h"
-#include "wifi_provisioning/wifi_config.h"
-#include "wifi_provisioning/manager.h"
+// #include "wifi_provisioning/wifi_config.h"
+// #include "wifi_provisioning/manager.h"
 
 #define TAG1 "OTA"
 #define TAG2 "MQTT"
@@ -273,7 +273,6 @@ void OnConnected(void *para)
     }
   }
 }
-
 
 void OnConnectedOta(void *para)
 {
