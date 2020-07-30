@@ -19,9 +19,13 @@
 #include "connect.h"
 #include "mqtt_client.h"
 #include "driver/gpio.h"
+#include "wifi_provisioning/wifi_config.h"
+#include "wifi_provisioning/manager.h"
 
 #define TAG1 "OTA"
 #define TAG2 "MQTT"
+
+xSemaphoreHandle mutexHandle;
 
 // ********* OTA ************
 xSemaphoreHandle ota_semaphore;
@@ -29,8 +33,12 @@ xSemaphoreHandle ota_semaphore;
 // ********* MQTT ************
 xQueueHandle readingQueue;
 TaskHandle_t taskHandle;
+TaskHandle_t taskOTAHandle;
+extern int ota_incourse = 0;
+int reading_shot = 0;
 
-const uint32_t WIFI_CONNEECTED = BIT1;
+
+const uint32_t WIFI_CONNECTED = BIT1;
 const uint32_t MQTT_CONNECTED = BIT2;
 const uint32_t MQTT_PUBLISHED = BIT3;
 
@@ -101,79 +109,103 @@ esp_err_t validate_image_header(esp_app_desc_t *incoming_ota_desc)
   return ESP_OK;
 }
 
-void run_ota(void *params)
-{  
-  ESP_ERROR_CHECK(nvs_flash_init());
-  tcpip_adapter_init();
-  // ESP_ERROR_CHECK(esp_event_loop_create_default());
-  // while (true)
-  // {
-  //   xSemaphoreTake(ota_semaphore, portMAX_DELAY);
-  //   ESP_LOGI(TAG1, "Invoking OTA");
-  
-  //   ESP_ERROR_CHECK(example_connect());
-  
-  //   esp_http_client_config_t clientConfig = {
-  //     .url = "https://drive.google.com/u/0/uc?id=1zqMt6QZwwLAWnsK19ZY9C-wH93NBZHd_&export=download",
-  //     .event_handler = client_event_handler,
-  //     .cert_pem = (char *)server_cert_pem_start
-  //   };
-   
-  //   esp_https_ota_config_t ota_config = {
-  //       .http_config = &clientConfig};
-
-  //   esp_https_ota_handle_t ota_handle = NULL;
-
-  //   if (esp_https_ota_begin(&ota_config, &ota_handle) != ESP_OK)
-  //   {
-  //     ESP_LOGE(TAG1, "esp_https_ota_begin failed");
-  //     example_disconnect();
-  //     continue;
-  //   }
-
-  //   esp_app_desc_t incoming_ota_desc;
-  //   if (esp_https_ota_get_img_desc(ota_handle, &incoming_ota_desc) != ESP_OK)
-  //   {
-  //     ESP_LOGE(TAG1, "esp_https_ota_get_img_desc failed");
-  //     esp_https_ota_finish(ota_handle);
-  //     example_disconnect();
-  //     continue;
-  //   }
-
-  //   if (validate_image_header(&incoming_ota_desc) != ESP_OK)
-  //   {
-  //     ESP_LOGE(TAG1, "validate_image_header failed");
-  //     esp_https_ota_finish(ota_handle);
-  //     example_disconnect();
-  //     continue;
-  //   }
-
-  //   while (true)
-  //   {
-  //     esp_err_t ota_result = esp_https_ota_perform(ota_handle);
-  //     if (ota_result != ESP_ERR_HTTPS_OTA_IN_PROGRESS)
-  //       break;
-  //   }
-
-  //   if (esp_https_ota_finish(ota_handle) != ESP_OK)
-  //   {
-  //     ESP_LOGE(TAG1, "esp_https_ota_finish failed");
-  //     example_disconnect();
-  //     continue;
-  //   }
-  //   else
-  //   {
-  //     printf("restarting in 5 seconds\n");
-  //     vTaskDelay(pdMS_TO_TICKS(5000));
-  //     esp_restart();
-  //   }
-  //   ESP_LOGE(TAG1, "Failed to update firmware");
-  // }  
-}
-
-void on_button_pushed(void *params)
+void OTALogic()
 {
-  xSemaphoreGiveFromISR(ota_semaphore, pdFALSE);
+  uint32_t command = 0;
+  while (true)
+  {
+    printf("dentro OTA logic prima if\n");
+    // if (xSemaphoreTake(ota_semaphore, portMAX_DELAY) && ota_incourse == 0 )
+    if (ota_incourse == 1 )
+    {
+      printf("dentro OTA logic dopo if -- ota_incourse=%d\n", ota_incourse);
+      xTaskNotifyWait(0, 0, &command, portMAX_DELAY);
+      switch (command)
+      {
+      case WIFI_CONNECTED:
+        printf("dentro OTALogic subito dopo WIFI CONNECTED \n");
+        while (true)
+        {
+          printf("dentro WIFI CONNECTED-subito dopo while \n");
+          ESP_LOGI(TAG1, "Invoking OTA");
+          printf("dentro run_ota-while dopo connect\n");
+        
+          esp_http_client_config_t clientConfig = {
+            .url = "https://drive.google.com/u/0/uc?id=1zqMt6QZwwLAWnsK19ZY9C-wH93NBZHd_&export=download",
+            .event_handler = client_event_handler,
+            .cert_pem = (char *)server_cert_pem_start};
+      
+          esp_https_ota_config_t ota_config = {
+            .http_config = &clientConfig};
+
+          esp_https_ota_handle_t ota_handle = NULL;
+  
+          if (esp_https_ota_begin(&ota_config, &ota_handle) != ESP_OK)
+          {
+            ESP_LOGE(TAG1, "esp_https_ota_begin failed");
+            continue;
+          }
+
+          esp_app_desc_t incoming_ota_desc;
+          if (esp_https_ota_get_img_desc(ota_handle, &incoming_ota_desc) != ESP_OK)
+          {
+            ESP_LOGE(TAG1, "esp_https_ota_get_img_desc failed");
+            esp_https_ota_finish(ota_handle);
+            ota_incourse = 0;
+            esp_wifi_stop();
+            xSemaphoreGive(ota_semaphore);
+            // example_disconnect();
+            continue;
+          }
+          if (validate_image_header(&incoming_ota_desc) != ESP_OK)
+          {
+            ESP_LOGE(TAG1, "validate_image_header failed");
+            esp_https_ota_finish(ota_handle);
+            ota_incourse = 0;
+            esp_wifi_stop();
+            xSemaphoreGive(ota_semaphore);
+            // example_disconnect();
+            continue;
+          }
+
+          while (true)
+          {
+            esp_err_t ota_result = esp_https_ota_perform(ota_handle);
+            if (ota_result != ESP_ERR_HTTPS_OTA_IN_PROGRESS)
+              break;
+          }
+
+          if (esp_https_ota_finish(ota_handle) != ESP_OK)
+          {
+            ESP_LOGE(TAG1, "esp_https_ota_finish failed");
+            ota_incourse = 0;
+            esp_wifi_stop();
+            xSemaphoreGive(ota_semaphore);
+            // example_disconnect();
+            continue;
+          }
+          else
+          {
+            printf("restarting in 5 seconds\n");
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            esp_restart();
+          }
+          ESP_LOGE(TAG1, "Failed to update firmware");
+        }
+        break;
+      default:
+        break;
+      }
+    }
+    else
+    {
+      printf(" dentro MQTT logic dentro else-- ota_incourse=%d\n", ota_incourse);
+    }
+    
+// prova 1 linea 
+    printf("fuori if ota_inservice MQTT logic\n");
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+  }
 }
 
 
@@ -187,80 +219,250 @@ void MQTTLogic(int sensorReading)
 
   while (true)
   {
-    xTaskNotifyWait(0, 0, &command, portMAX_DELAY);
-    switch (command)
+    printf("dentro MQTT logic prima if\n");
+    // if (xSemaphoreTake(ota_semaphore, portMAX_DELAY) && ota_incourse == 0 )
+    if (ota_incourse == 0 )
     {
-    case WIFI_CONNEECTED:
-      client = esp_mqtt_client_init(&mqttConfig);
-      esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler, client);
-      esp_mqtt_client_start(client);
-      break;
-    case MQTT_CONNECTED:
-      esp_mqtt_client_subscribe(client, "/pano/mymgnt/general", 2);
-      char data[50];
-      sprintf(data, "%d", sensorReading);
-      printf("sending data: %d", sensorReading);
-      esp_mqtt_client_publish(client, "/pano/power/main", data, strlen(data), 2, false);
-      break;
-    case MQTT_PUBLISHED:
-      esp_mqtt_client_stop(client);
-      esp_mqtt_client_destroy(client);
-      esp_wifi_stop();
-      return;
-    default:
-      break;
+      printf("dentro MQTT logic dopo if -- ota_incourse=%d\n", ota_incourse);
+      xTaskNotifyWait(0, 0, &command, 3000 / portTICK_PERIOD_MS);
+      // xTaskNotifyWait(0, 0, &command, portMAX_DELAY);
+      switch (command)
+      {
+      case WIFI_CONNECTED:
+        printf("dentro MQTT logic dopo WIFI_CONNECTED\n");
+        client = esp_mqtt_client_init(&mqttConfig);
+        esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler, client);
+        printf("dentro MQTT logic sending data: %d\n", sensorReading);
+        esp_mqtt_client_start(client);
+        break;
+      case MQTT_CONNECTED:
+        esp_mqtt_client_subscribe(client, "/pano/mymgnt/general", 2);
+        char data[50];
+        sprintf(data, "%d", sensorReading);
+        printf("dentro MQTT logic sending data: %d\n", sensorReading);
+        esp_mqtt_client_publish(client, "/pano/power/main", data, strlen(data), 2, false);
+        break;
+      case MQTT_PUBLISHED:
+        esp_mqtt_client_stop(client);
+        esp_mqtt_client_destroy(client);
+        printf("dentro MQTT logic sending data prima deinit: %d\n", sensorReading);
+        esp_wifi_stop();
+        // esp_wifi_deinit();
+        // wifi_prov_mgr_deinit();
+  // prova 1 linea 
+        printf("dentro MQTT logic - rilascio CPU prima SemaphoreGive \n");
+  // prova 1 linea
+        // xSemaphoreGive(ota_semaphore);
+        // ota_incourse = 1;
+  // prova 1 linea 
+        printf("dentro MQTT logic rilascio CPU dopo SemaphoreGive \n");
+        return;
+  // prova 1 linea 
+        printf("rilascio CPU dopo return \n");
+      default:
+        break;
+      }
     }
+    else
+    {
+      printf(" dentro MQTT logic dentro else-- ota_incourse=%d\n", ota_incourse);
+    }
+    
+// prova 1 linea 
+    printf("fuori if ota_inservice MQTT logic\n");
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
 void OnConnected(void *para)
 {
-  while (true)
+  printf("dentro On Connected - prima di while -- ota_incourse = %d \n", ota_incourse);
+  if (ota_incourse == 0 )
   {
     int sensorReading;
-    if (xQueueReceive(readingQueue, &sensorReading, portMAX_DELAY))
+    while (true)
     {
-      ESP_ERROR_CHECK(esp_wifi_start());
-      MQTTLogic(sensorReading);
+      printf("dentro On Connected - dentro while prima if xQueueReceive \n");
+      if (xQueueReceive(readingQueue, &sensorReading, portMAX_DELAY))
+      {
+        printf("dentro On Connected - dentro while dentro if xQueueReceive \n");
+        ESP_ERROR_CHECK(esp_wifi_start());
+        MQTTLogic(sensorReading);
+        // xSemaphoreGive(ota_semaphore);
+      }
+    printf("dentro On Connected - dentro while dopo if xQueueReceive \n");  
     }
   }
 }
 
-void generateReading(void *params)
+
+void OnConnectedOta(void *para)
 {
-  while (true)
+  printf("dentro On ConnectedOta ota_incourse = %d \n", ota_incourse);
+  if (ota_incourse == 1 )
   {
-    int random = esp_random();
-    xQueueSend(readingQueue, &random, 2000 / portTICK_PERIOD_MS);
-    vTaskDelay(15000 / portTICK_PERIOD_MS);
+    // ESP_ERROR_CHECK(esp_wifi_start());
+    printf("dentro On Connected dopo else\n");
+    ESP_ERROR_CHECK(esp_wifi_start());
+    OTALogic();
+    printf("dentro On Connected dopo OTALogic - ota_incourse = %d \n", ota_incourse);
   }
 }
 
 
+void generateReading(void *params)
+{
+  printf("dentro generatingReading  - prima di while\n");
+  while (true)
+  {
+    if (ota_incourse == 0 )
+    {
+      printf("dentro generatingReading  - dentro di while prima di xQueueSend\n");
+      int random = esp_random();
+      if (reading_shot == 0)
+      {
+        xQueueSend(readingQueue, &random, 2000 / portTICK_PERIOD_MS);
+        printf("dentro generatingReading  - dentro di while dopo xQueueSend\n");
+        vTaskDelay(15000 / portTICK_PERIOD_MS);
+        printf("dentro generatingReading  - dentro di while dopo timer 15sec reading_shot: %d\n", reading_shot);
+        reading_shot = 1;
+        printf("dentro generatingReading  - dentro while cambio variabile reading_shot: %d\n", reading_shot);
+      }
+      else
+      {
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+      }
+    }
+  }
+}
+
+void taskMQTT(void * params)
+{
+  printf("dentro TaskMQTT prima di while\n");
+  // printf("dentro TaskMQTT %d %d \n", ota_incourse, xSemaphoreTake(ota_semaphore, portMAX_DELAY));
+  while (true)
+  {
+    printf("dentro TaskMQTT -- while prima if\n");
+    if (xSemaphoreTake(ota_semaphore, portMAX_DELAY) && ota_incourse == 0 )
+    // if (xSemaphoreTake(ota_semaphore, portMAX_DELAY))
+    // if (xSemaphoreTake(mutexHandle, 2000 / portTICK_PERIOD_MS))
+    {
+      reading_shot = 0;
+      printf("dentro TaskMQTT -- while dopo if --> preso token\n");
+      readingQueue = xQueueCreate(sizeof(int), 10);
+      // wifiInit();
+      printf("dentro TaskMQTT -- dopo wifi-init\n");
+      xTaskCreate(OnConnected, "handle comms", 1024 * 5, NULL, 5, &taskHandle);
+      printf("dentro TaskMQTT -- dopo xtask OnConnected\n");
+      xTaskCreate(generateReading, "handle comms", 1024 * 5, NULL, 5, NULL);
+      // vTaskDelay(500 / portTICK_PERIOD_MS);
+      printf("dentro TaskMQTT -- dopo generatingReading e prima del delay di 20sec\n");
+      vTaskDelay(8000 / portTICK_PERIOD_MS);
+      printf("dentro TaskMQTT -- dopo del delay di 2sec, ma prima di rilascio token\n");
+      ota_incourse = 1;
+      xSemaphoreGive(ota_semaphore);
+      printf("dentro TaskMQTT -- dopo del delay di 2sec e rilascio token\n");
+      // vTaskDelay(1000 / portTICK_PERIOD_MS);
+      // xSemaphoreGive(mutexHandle);
+    }
+    else
+    {
+      printf("TaskMQTT timed out \n");
+    }
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+  }
+}
+
+void taskOTA(void * params) 
+{
+  printf("dentro TaskOTA prima while \n");
+  // while (ota_incourse == 1)
+  while (true)
+  {
+    // if (xSemaphoreTake(mutexHandle, 5000 / portTICK_PERIOD_MS))
+    if (xSemaphoreTake(ota_semaphore, portMAX_DELAY) && ota_incourse == 1)
+    // if (xSemaphoreTake(ota_semaphore, 5000 / portTICK_PERIOD_MS))
+    {
+      printf("dentro TaskOTA -- while dopo if --> preso token \n");
+      const esp_partition_t *running_partition = esp_ota_get_running_partition();
+      esp_app_desc_t running_partition_description;
+      esp_ota_get_partition_description(running_partition, &running_partition_description);
+      printf("current firmware versionnn is: %s\n", running_partition_description.version);
+        
+      // gpio_config_t gpioConfig = {
+      //     .pin_bit_mask = 1ULL << GPIO_NUM_0,
+      //     .mode = GPIO_MODE_DEF_INPUT,
+      //     .pull_up_en = GPIO_PULLUP_ENABLE,
+      //     .pull_down_en = GPIO_PULLUP_DISABLE,
+      //     .intr_type = GPIO_INTR_NEGEDGE};
+      // gpio_config(&gpioConfig);
+      // gpio_install_isr_service(0);
+      // gpio_isr_handler_add(GPIO_NUM_0, on_button_pushed, NULL);
+
+      printf("dentro taskOTA dopo def ISR\n");
+
+      // ota_semaphore = xSemaphoreCreateBinary();
+      // printf("dentro taskOTA dopo def ota semaf\n");
+
+      // xTaskCreate(run_ota, "run_ota", 1024 * 8, NULL, 2, NULL);
+      // wifiInit();
+
+      xTaskCreate(OnConnectedOta, "run_OTALogic", 1024 * 5, NULL, 5, &taskOTAHandle);
+      // xTaskCreate(OnConnected, "run_otalogic", 1024 * 8, NULL, 2, NULL);
+      printf("dentro taskOTA dopo run_ota task create\n");
+
+      // vTaskDelay(5000 / portTICK_PERIOD_MS);
+      printf("dentro taskOTA dopo vTaskDelay\n");
+      // xSemaphoreGive(mutexHandle);
+      // printf("dentro taskOTA dopo semaf mutex give\n");
+    }
+    else
+    {
+      printf("TaskOTA timed out \n");
+    }
+     printf("dentro TaskOTA dopo if \n");
+     vTaskDelay(500 / portTICK_PERIOD_MS);
+  }
+  printf("dentro TaskOTA dopo while --> NON preso token \n");
+}
 void app_main(void)
 {
-// ********* MQTT ************
-  readingQueue = xQueueCreate(sizeof(int), 10);
+  ota_semaphore = xSemaphoreCreateBinary();
+  // mutexHandle = xSemaphoreCreateMutex();
   wifiInit();
-  xTaskCreate(OnConnected, "handle comms", 1024 * 5, NULL, 5, &taskHandle);
-  xTaskCreate(generateReading, "handle comms", 1024 * 5, NULL, 5, NULL);
+
+  printf("dentro main prima task MQTT \n");
+  xTaskCreate(&taskMQTT, "sensRead & DataRece", 1024*20, "taskMQTT", 2, NULL);
+  // prova 1 linea
+  // vTaskDelay(10000 / portTICK_PERIOD_MS);
+  printf("dentro main prima task OTA \n");
+  xTaskCreate(&taskOTA, "Ve&Down NewSW Ver", 1024*10, "taskOTA", 2, NULL);
+  ota_incourse = 0;
+
+  xSemaphoreGive(ota_semaphore);
+  printf("dentro main dopo semaphore give \n");
+// ********* MQTT ************
+  // readingQueue = xQueueCreate(sizeof(int), 10);
+  // wifiInit();
+  // xTaskCreate(OnConnected, "handle comms", 1024 * 5, NULL, 5, &taskHandle);
+  // xTaskCreate(generateReading, "handle comms", 1024 * 5, NULL, 5, NULL);
 
 // ********* OTA ************
-  const esp_partition_t *running_partition = esp_ota_get_running_partition();
-  esp_app_desc_t running_partition_description;
-  esp_ota_get_partition_description(running_partition, &running_partition_description);
-  printf("current firmware version is: %s\n", running_partition_description.version);
+  // const esp_partition_t *running_partition = esp_ota_get_running_partition();
+  // esp_app_desc_t running_partition_description;
+  // esp_ota_get_partition_description(running_partition, &running_partition_description);
+  // printf("current firmware version is: %s\n", running_partition_description.version);
     
-  gpio_config_t gpioConfig = {
-      .pin_bit_mask = 1ULL << GPIO_NUM_0,
-      .mode = GPIO_MODE_DEF_INPUT,
-      .pull_up_en = GPIO_PULLUP_ENABLE,
-      .pull_down_en = GPIO_PULLUP_DISABLE,
-      .intr_type = GPIO_INTR_NEGEDGE};
-  gpio_config(&gpioConfig);
-  gpio_install_isr_service(0);
-  gpio_isr_handler_add(GPIO_NUM_0, on_button_pushed, NULL);
+  // gpio_config_t gpioConfig = {
+  //     .pin_bit_mask = 1ULL << GPIO_NUM_0,
+  //     .mode = GPIO_MODE_DEF_INPUT,
+  //     .pull_up_en = GPIO_PULLUP_ENABLE,
+  //     .pull_down_en = GPIO_PULLUP_DISABLE,
+  //     .intr_type = GPIO_INTR_NEGEDGE};
+  // gpio_config(&gpioConfig);
+  // gpio_install_isr_service(0);
+  // gpio_isr_handler_add(GPIO_NUM_0, on_button_pushed, NULL);
 
-  ota_semaphore = xSemaphoreCreateBinary();
-  xTaskCreate(run_ota, "run_ota", 1024 * 8, NULL, 2, NULL);
+  // ota_semaphore = xSemaphoreCreateBinary();
+  // xTaskCreate(run_ota, "run_ota", 1024 * 8, NULL, 2, NULL);
 }

@@ -11,7 +11,7 @@
       "miDebuggerPath": "C:\\esp\\esp40branch\\tools\\.espressif\\tools\\xtensa-esp32-elf\\esp-2019r2-8.2.0\\xtensa-esp32-elf\\bin\\xtensa-esp32-elf-gdb.exe",
       "cwd": "${workspaceFolder}/build",
       //change the name of the elf file as required
-      "program": "C:\\esp\\esp40branch\\esp-idf\\examples\\system\\ota\\mair_example\\build\\mair-template.elf",
+      "program": "C:\\esp\\esp40branch\\esp-idf\\examples\\system\\ota\\mair_ex_mutex\\build\\mair-template.elf",
       "setupCommands": [
         {
           "description": "Enable pretty-printing for gdb",
@@ -19,7 +19,7 @@
           "ignoreFailures": true
         },
         {
-          "text": "file 'C:\\esp\\esp40branch\\esp-idf\\examples\\system\\ota\\mair_example\\build\\mair-template.elf'"
+          "text": "file 'C:\\esp\\esp40branch\\esp-idf\\examples\\system\\ota\\mair_ex_mutex\\build\\mair-template.elf'"
         },
         {
           "text": "target remote 127.0.0.1:3333"

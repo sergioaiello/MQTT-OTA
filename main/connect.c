@@ -14,7 +14,10 @@
 char *TAG = "CONNECTION";
 
 extern TaskHandle_t taskHandle;
-extern const uint32_t WIFI_CONNEECTED;
+extern TaskHandle_t taskOTAHandle;
+extern const uint32_t WIFI_CONNECTED;
+int ota_incourse;
+
 
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
@@ -31,7 +34,10 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
 
   case SYSTEM_EVENT_STA_GOT_IP:
     ESP_LOGI(TAG,"got ip\n");
-    xTaskNotify(taskHandle, WIFI_CONNEECTED, eSetValueWithOverwrite);
+    if ( ota_incourse == 0)
+      xTaskNotify(taskHandle, WIFI_CONNECTED, eSetValueWithOverwrite);
+    else
+      xTaskNotify(taskOTAHandle, WIFI_CONNECTED, eSetValueWithOverwrite);
     break;
 
   case SYSTEM_EVENT_STA_DISCONNECTED:
