@@ -302,16 +302,14 @@ void generateReading(void *params)
       {
         xQueueSend(readingQueue, &random, 2000 / portTICK_PERIOD_MS);
         printf("dentro generatingReading  - dentro di while dopo xQueueSend\n");
-        // vTaskDelay(15000 / portTICK_PERIOD_MS);
-        printf("dentro generatingReading  - dentro di while dopo timer 15sec reading_shot: %d\n", reading_shot);
         reading_shot = 1;
         printf("dentro generatingReading  - dentro while cambio variabile reading_shot: %d\n", reading_shot);
       }
       else
       {
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
       }
-      vTaskDelay(1000 / portTICK_PERIOD_MS);
+      vTaskDelay(500 / portTICK_PERIOD_MS);
     }
   }
 }
@@ -319,15 +317,13 @@ void generateReading(void *params)
 void taskMQTT(void * params)
 {
   printf("dentro TaskMQTT prima di while\n");
-  // printf("dentro TaskMQTT %d %d \n", ota_incourse, xSemaphoreTake(ota_semaphore, portMAX_DELAY));
   while (true)
   {
     printf("dentro TaskMQTT -- while prima if\n");
     if (xSemaphoreTake(ota_semaphore, portMAX_DELAY) && ota_incourse == 0 )
-    // if (xSemaphoreTake(ota_semaphore, portMAX_DELAY))
-    // if (xSemaphoreTake(mutexHandle, 2000 / portTICK_PERIOD_MS))
     {
       reading_shot = 0;
+      ESP_LOGI(TAG2, "MQTT Taken token");
       printf("dentro TaskMQTT -- while dopo if --> preso token\n");
       readingQueue = xQueueCreate(sizeof(int), 10);
       xTaskCreate(OnConnected, "handle comms", 1024 * 5, NULL, 5, &taskHandle);
@@ -356,58 +352,32 @@ void taskOTA(void * params)
     if (xSemaphoreTake(ota_semaphore, portMAX_DELAY) && ota_incourse == 1)
     // if (xSemaphoreTake(ota_semaphore, 5000 / portTICK_PERIOD_MS))
     {
-      printf("dentro TaskOTA -- while dopo if --> preso token \n");
+      ESP_LOGI(TAG1, "OTA Taken token");
       const esp_partition_t *running_partition = esp_ota_get_running_partition();
       esp_app_desc_t running_partition_description;
       esp_ota_get_partition_description(running_partition, &running_partition_description);
       printf("current firmware versionnn is: %s\n", running_partition_description.version);
         
-      // gpio_config_t gpioConfig = {
-      //     .pin_bit_mask = 1ULL << GPIO_NUM_0,
-      //     .mode = GPIO_MODE_DEF_INPUT,
-      //     .pull_up_en = GPIO_PULLUP_ENABLE,
-      //     .pull_down_en = GPIO_PULLUP_DISABLE,
-      //     .intr_type = GPIO_INTR_NEGEDGE};
-      // gpio_config(&gpioConfig);
-      // gpio_install_isr_service(0);
-      // gpio_isr_handler_add(GPIO_NUM_0, on_button_pushed, NULL);
-
       printf("dentro taskOTA dopo def ISR\n");
 
-      // ota_semaphore = xSemaphoreCreateBinary();
-      // printf("dentro taskOTA dopo def ota semaf\n");
-
-      // xTaskCreate(run_ota, "run_ota", 1024 * 8, NULL, 2, NULL);
-      // wifiInit();
-
       xTaskCreate(OnConnectedOta, "run_OTALogic", 1024 * 5, NULL, 5, &taskOTAHandle);
-      // xTaskCreate(OnConnected, "run_otalogic", 1024 * 8, NULL, 2, NULL);
-      printf("dentro taskOTA dopo run_ota task create\n");
-
-      // vTaskDelay(5000 / portTICK_PERIOD_MS);
-      printf("dentro taskOTA dopo vTaskDelay\n");
-      // xSemaphoreGive(mutexHandle);
-      // printf("dentro taskOTA dopo semaf mutex give\n");
     }
     else
     {
       printf("TaskOTA timed out \n");
     }
-     printf("dentro TaskOTA dopo if \n");
-     vTaskDelay(500 / portTICK_PERIOD_MS);
+    printf("dentro TaskOTA dopo if \n");
+    vTaskDelay(500 / portTICK_PERIOD_MS);
   }
   printf("dentro TaskOTA dopo while --> NON preso token \n");
 }
 void app_main(void)
 {
   ota_semaphore = xSemaphoreCreateBinary();
-  // mutexHandle = xSemaphoreCreateMutex();
   wifiInit();
 
   printf("dentro main prima task MQTT \n");
   xTaskCreate(&taskMQTT, "sensRead & DataRece", 1024*20, "taskMQTT", 2, NULL);
-  // prova 1 linea
-  // vTaskDelay(10000 / portTICK_PERIOD_MS);
   printf("dentro main prima task OTA \n");
   xTaskCreate(&taskOTA, "Ve&Down NewSW Ver", 1024*10, "taskOTA", 2, NULL);
   ota_incourse = 0;
