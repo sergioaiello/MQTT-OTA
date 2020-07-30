@@ -114,19 +114,14 @@ void OTALogic()
   uint32_t command = 0;
   while (true)
   {
-    printf("dentro OTA logic prima if\n");
-    // if (xSemaphoreTake(ota_semaphore, portMAX_DELAY) && ota_incourse == 0 )
     if (ota_incourse == 1 )
     {
-      printf("dentro OTA logic dopo if -- ota_incourse=%d\n", ota_incourse);
       xTaskNotifyWait(0, 0, &command, portMAX_DELAY);
       switch (command)
       {
       case WIFI_CONNECTED:
-        printf("dentro OTALogic subito dopo WIFI CONNECTED \n");
         while (true)
         {
-          printf("OTALogic dentro WIFI CONNECTED-subito dopo while \n");
           ESP_LOGI(TAG1, "Invoking OTA");
 
           esp_http_client_config_t clientConfig = {
@@ -150,18 +145,18 @@ void OTALogic()
           {
             ESP_LOGE(TAG1, "esp_https_ota_get_img_desc failed");
             esp_https_ota_finish(ota_handle);
-            // ota_incourse = 0;
-            // esp_wifi_stop();
-            // xSemaphoreGive(ota_semaphore);
+            ota_incourse = 0;
+            esp_wifi_stop();
+            xSemaphoreGive(ota_semaphore);
             continue;
           }
           if (validate_image_header(&incoming_ota_desc) != ESP_OK)
           {
             ESP_LOGE(TAG1, "validate_image_header failed");
             esp_https_ota_finish(ota_handle);
-            // ota_incourse = 0;
-            // esp_wifi_stop();
-            // xSemaphoreGive(ota_semaphore);
+            ota_incourse = 0;
+            esp_wifi_stop();
+            xSemaphoreGive(ota_semaphore);
             continue;
           }
 
@@ -175,9 +170,9 @@ void OTALogic()
           if (esp_https_ota_finish(ota_handle) != ESP_OK)
           {
             ESP_LOGE(TAG1, "esp_https_ota_finish failed");
-            // ota_incourse = 0;
-            // esp_wifi_stop();
-            // xSemaphoreGive(ota_semaphore);
+            ota_incourse = 0;
+            esp_wifi_stop();
+            xSemaphoreGive(ota_semaphore);
             continue;
           }
           else
@@ -195,15 +190,15 @@ void OTALogic()
     }
     else
     {
-      printf(" dentro MQTT logic dentro else-- ota_incourse=%d\n", ota_incourse);
+      printf(" dentro OTA logic dentro else-- ota_incourse=%d\n", ota_incourse);
+      vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
     
 // prova 1 linea 
-    printf("MQTT logic -- fuori if ota_inservice \n");
+    printf("OTA logic -- fuori if ota_inservice \n");
     vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
-
 
 // ********* MQTT ************
 void MQTTLogic(int sensorReading)
@@ -225,36 +220,24 @@ void MQTTLogic(int sensorReading)
       switch (command)
       {
       case WIFI_CONNECTED:
-        printf("dentro MQTT logic dopo WIFI_CONNECTED\n");
         client = esp_mqtt_client_init(&mqttConfig);
         esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler, client);
-        printf("dentro MQTT logic sending data: %d\n", sensorReading);
+        printf("MQTT logic - sending data: %d\n", sensorReading);
         esp_mqtt_client_start(client);
         break;
       case MQTT_CONNECTED:
         esp_mqtt_client_subscribe(client, "/pano/mymgnt/general", 2);
         char data[50];
         sprintf(data, "%d", sensorReading);
-        printf("dentro MQTT logic sending data: %d\n", sensorReading);
+        printf("MQTT logic - sending data: %d\n", sensorReading);
         esp_mqtt_client_publish(client, "/pano/power/main", data, strlen(data), 2, false);
         break;
       case MQTT_PUBLISHED:
         esp_mqtt_client_stop(client);
         esp_mqtt_client_destroy(client);
-        printf("dentro MQTT logic sending data prima deinit: %d\n", sensorReading);
+        printf("MQTT logic prima wifiStop - sending data : %d\n", sensorReading);
         esp_wifi_stop();
-        // esp_wifi_deinit();
-        // wifi_prov_mgr_deinit();
-  // prova 1 linea 
-        printf("dentro MQTT logic - rilascio CPU prima SemaphoreGive \n");
-  // prova 1 linea
-        // xSemaphoreGive(ota_semaphore);
-        // ota_incourse = 1;
-  // prova 1 linea 
-        printf("dentro MQTT logic rilascio CPU dopo SemaphoreGive \n");
         return;
-  // prova 1 linea 
-        printf("rilascio CPU dopo return \n");
       default:
         break;
       }
